@@ -59,7 +59,7 @@ static void blockingArithmeticIncrement(lcb_t instance, char *keyName) {
   lcb_error_t           arithmeticIncrementErrorCode = 0;
   lcb_arithmetic_cmd_t *arithmeticCommand         = calloc(1, sizeof(*arithmeticCommand));
 
-  arithmeticCommand->version      = 0;		// What does this do
+  arithmeticCommand->version      = 0;		// determine if this is factor 	
   arithmeticCommand->v.v0.key     = keyName;
   arithmeticCommand->v.v0.nkey    = keyLength;
   arithmeticCommand->v.v0.create  = 0;	 	// as opposed to 1
