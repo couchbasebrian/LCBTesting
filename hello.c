@@ -23,133 +23,195 @@ long timer_end(struct timespec start_time){
     return diffInNanos;
 }
 
-static void storage_callback(lcb_t instance, const void *cookie, lcb_storage_t op, 
-   lcb_error_t err, const lcb_store_resp_t *resp)
+// Callbacks for different functions
+
+static void storage_callback(lcb_t instance, const void *cookie, lcb_storage_t op, lcb_error_t err, const lcb_store_resp_t *resp)
 {
-  printf("Stored %.*s\n", (int)resp->v.v0.nkey, resp->v.v0.key);
+    printf("  Callback for storage.  Stored %.*s\n", (int)resp->v.v0.nkey, resp->v.v0.key);
 }
 
-static void get_callback(lcb_t instance, const void *cookie, lcb_error_t err, 
-   const lcb_get_resp_t *resp)
+static void get_callback(lcb_t instance, const void *cookie, lcb_error_t err, const lcb_get_resp_t *resp)
 {
-  long time_elapsed_nanos = timer_end(vartime);
-  printf("Time taken for get (nanoseconds): %ld\n", time_elapsed_nanos);
-
-  printf("Retrieved key %.*s\n", (int)resp->v.v0.nkey, resp->v.v0.key);
-  printf("Value is %.*s\n", (int)resp->v.v0.nbytes, resp->v.v0.bytes);
+    long time_elapsed_nanos = timer_end(vartime);
+    printf("  Callback for get.  Time taken for get (nanoseconds): %ld\n", time_elapsed_nanos);
+    printf("  Retrieved key %.*s\n", (int)resp->v.v0.nkey, resp->v.v0.key);
+    printf("  Value is %.*s\n", (int)resp->v.v0.nbytes, resp->v.v0.bytes);
 }
 
 static void touch_callback (lcb_t instance, const void *cookie, lcb_error_t error, const lcb_touch_resp_t *resp)
 {
-       printf("Callback for touch.  error is  0x%.8X \n", error);
+    printf("  Callback for touch.  error is  0x%.8X \n", error);
 }
 
 
-static void arithmetic_callback(lcb_t instance, const void *cookie, lcb_error_t error, 
-   const lcb_arithmetic_resp_t *resp)
+static void arithmetic_callback(lcb_t instance, const void *cookie, lcb_error_t error, const lcb_arithmetic_resp_t *resp)
 {
-       printf("Callback for arithmetic.  Error is 0x%.8X \n", error);
-
-lcb_error_t errorCode;
-
-lcb_touch_cmd_t *touch =  calloc(1, sizeof(*touch));
- 
-const lcb_touch_cmd_t *cmdlist[] = { touch };
-touch->v.v0.key = "counter";
-touch->v.v0.nkey = strlen(touch->v.v0.key);
-touch->v.v0.exptime = 300; // 5 minutes
-errorCode = lcb_touch(instance, NULL, 1, cmdlist);
-
-       printf("errorCode is 0x%.8X \n", errorCode);
+    printf("  Callback for arithmetic.  Error is 0x%.8X \n", error);
 }
 
 
+// Given an LCB instance and a key name, increment an arithmetic, and
+// wait until it finishes, and if there is an error, display it.
+static void blockingArithmeticIncrement(lcb_t instance, char *keyName) {
 
-int main(void)
+  int keyLength = strlen(keyName);
+
+  lcb_error_t           arithmeticIncrementErrorCode = 0;
+  lcb_arithmetic_cmd_t *arithmeticCommand         = calloc(1, sizeof(*arithmeticCommand));
+
+  arithmeticCommand->version      = 0;		// What does this do
+  arithmeticCommand->v.v0.key     = keyName;
+  arithmeticCommand->v.v0.nkey    = keyLength;
+  arithmeticCommand->v.v0.create  = 0;	 	// as opposed to 1
+  arithmeticCommand->v.v0.delta   = 1;		// increment by one
+
+  const lcb_arithmetic_cmd_t* arithCommands[] = { arithmeticCommand };
+
+  arithmeticIncrementErrorCode = lcb_arithmetic(instance, NULL, 1, arithCommands);
+  if (arithmeticIncrementErrorCode != LCB_SUCCESS) {
+    printf("Couldn't schedule arithmetic increment operation!\n");
+    printf("lcb_arithmetic errorCode is 0x%.8X \n", arithmeticIncrementErrorCode);
+    exit(1);
+  }
+
+  printf("Arithmetic CREATE: About to do lcb_wait()...\n");
+  lcb_wait(instance); 
+  printf("Back from lcb_wait()...\n");
+
+} // end of blockingArithmeticIncrement()
+
+
+
+// Given an LCB instance and a key name, create an arithmetic, and
+// wait until it finishes, and if there is an error, display it.
+static void blockingArithmeticCreate(lcb_t instance, char *keyName, int expTimeSeconds) {
+
+  int keyLength = strlen(keyName);
+
+  lcb_error_t           arithmeticCreateErrorCode = 0;
+  lcb_arithmetic_cmd_t *arithmeticCommand         = calloc(1, sizeof(*arithmeticCommand));
+
+  arithmeticCommand->version      = 0;
+  arithmeticCommand->v.v0.key     = keyName;
+  arithmeticCommand->v.v0.nkey    = keyLength;
+  arithmeticCommand->v.v0.exptime = expTimeSeconds; 
+  arithmeticCommand->v.v0.create  = 1;
+  arithmeticCommand->v.v0.delta   = 1;
+  arithmeticCommand->v.v0.initial = 1234500;
+
+  const lcb_arithmetic_cmd_t* arithCommands[] = { arithmeticCommand };
+
+  arithmeticCreateErrorCode = lcb_arithmetic(instance, NULL, 1, arithCommands);
+  if (arithmeticCreateErrorCode != LCB_SUCCESS) {
+    printf("Couldn't schedule arithmeetic create operation!\n");
+    printf("lcb_arithmetic errorCode is 0x%.8X \n", arithmeticCreateErrorCode);
+    exit(1);
+  }
+
+  printf("Arithmetic CREATE: About to do lcb_wait()...\n");
+  lcb_wait(instance); 
+  printf("Back from lcb_wait()...\n");
+
+} // end of blockingArithmeticCreate()
+
+
+// Doing a touch will set the expiration time of the item
+// http://docs.couchbase.com/sdk-api/couchbase-c-client-2.4.6/group__lcb-touch.html
+void blockingTouch(lcb_t instance, int expTimeSeconds, char *keyName) {
+
+  int keyLength = strlen(keyName);
+
+  lcb_error_t      touchErrorCode = 0;
+  lcb_touch_cmd_t *touchCommand   = calloc(1, sizeof(*touchCommand));
+
+  touchCommand->v.v0.key     = keyName;
+  touchCommand->v.v0.nkey    = keyLength;
+  touchCommand->v.v0.exptime = expTimeSeconds; 
+  touchCommand->v.v0.lock    = 0; 
+
+  const lcb_touch_cmd_t *touchCommandList[] = { touchCommand };
+
+  touchErrorCode = lcb_touch(instance, NULL, 1, touchCommandList);
+  if (touchErrorCode != LCB_SUCCESS) {
+    printf("Couldn't schedule touch operation!\n");
+    printf("lcb_touch errorCode is 0x%.8X \n", touchErrorCode);
+    exit(1);
+  }
+
+  printf("TOUCH: About to do lcb_wait()...\n");
+  lcb_wait(instance); 
+  printf("Back from lcb_wait()...\n");
+
+} // end of blockingTouch()
+
+
+// Main 
+int main(int argc, char* argv[])
 {
+  printf("Welcome.\n");
 
-  // struct timespec vartime = timer_start();  // begin a timer called 'vartime'
-  // vartime = timer_start();  // begin a timer called 'vartime'
+  // Do this once
+  srand(time(NULL));
 
   // initializing
-  
   struct lcb_create_st cropts = { 0 };
   cropts.version = 3;
   cropts.v.v3.connstr = "couchbase://localhost/default";
-  lcb_error_t err;
+  lcb_error_t create_err;
   lcb_t instance;
-  err = lcb_create(&instance, &cropts);
-  if (err != LCB_SUCCESS) {
+  create_err = lcb_create(&instance, &cropts);
+  if (create_err != LCB_SUCCESS) {
     printf("Couldn't create instance!\n");
     exit(1);
   }
   
   // connecting
-  
   lcb_connect(instance);
   lcb_wait(instance);
-  if ( (err = lcb_get_bootstrap_status(instance)) != LCB_SUCCESS ) {
+  lcb_error_t bootstrap_status_err;
+  if ( (bootstrap_status_err = lcb_get_bootstrap_status(instance)) != LCB_SUCCESS ) {
     printf("Couldn't bootstrap!\n");
     exit(1);
   }
   
   // installing callbacks
-  
   lcb_set_store_callback(instance, storage_callback);
   lcb_set_get_callback(instance, get_callback);
- 
-  (void)lcb_set_arithmetic_callback(instance, arithmetic_callback); 
-  (void)lcb_set_touch_callback(instance, touch_callback); 
+  lcb_set_arithmetic_callback(instance, arithmetic_callback); 
+  lcb_set_touch_callback(instance, touch_callback); 
 
-  lcb_arithmetic_cmd_t *arithmetic = calloc(1, sizeof(*arithmetic));
-  arithmetic->version = 0;
-  arithmetic->v.v0.key = "counter";
-  arithmetic->v.v0.nkey = strlen(arithmetic->v.v0.key);
-  arithmetic->v.v0.initial = 0x666;
-  arithmetic->v.v0.create = 1;
-  arithmetic->v.v0.delta = 1;
-  const lcb_arithmetic_cmd_t* commands[] = { arithmetic };
-  lcb_arithmetic(instance, NULL, 1, commands);
-  
- 
-  printf("About to do lcb_wait()...\n");
-  lcb_wait(instance); 
-  printf("Back from lcb_wait()...\n");
+  // Main part of the program
+  int numTimesToRun = 10;   // specify how many times to iterate
+  int useARandomKey = 1;    // specify whether to use a random or sequential key
 
-  // GET timing test
-  // Choose 0 if you don't want to do it
-  int doGetTest = 0;
+  char keyNameBuffer[100];
 
-  if (doGetTest == 1) {
- 
-  lcb_store_cmd_t scmd = { 0 };
-  const lcb_store_cmd_t *scmdlist = &scmd;
-  scmd.v.v0.key = "Hello";
-  scmd.v.v0.nkey = 5;
-  scmd.v.v0.bytes = "Couchbase";
-  scmd.v.v0.nbytes = 9;
-  scmd.v.v0.operation = LCB_SET;
-  err = lcb_store(instance, NULL, 1, &scmdlist);
-  if (err != LCB_SUCCESS) {
-    printf("Couldn't schedule storage operation!\n");
-    exit(1);
-  }
-  lcb_wait(instance); //storage_callback is invoked here
-  
-  lcb_get_cmd_t gcmd = { 0 };
-  const lcb_get_cmd_t *gcmdlist = &gcmd;
-  gcmd.v.v0.key = "Hello";
-  gcmd.v.v0.nkey = 5;
-  err = lcb_get(instance, NULL, 1, &gcmdlist);
-  if (err != LCB_SUCCESS) {
-    printf("Couldn't schedule get operation!\n");
-    exit(1);
-  }
+  int i = 0;
 
-  vartime = timer_start();  // begin a timer called 'vartime'
-  lcb_wait(instance); // get_callback is invoked here
+  for (i = 0; i < numTimesToRun; i++) {
 
-  }
+    if (useARandomKey == 0) {
+	// Do NOT use a random key
+        sprintf(keyNameBuffer, "nonRandomKey%d", i);
+    }
+    else {
+	// Use a random key, generate a new one for each iteration of the loop
+        int randomNumber = rand();
+        sprintf(keyNameBuffer, "randomKey%d", randomNumber);
+    }
+
+    printf("#### Iteration: %5d Key: %10s\n", i, keyNameBuffer);
+
+    // Perform the arithmetic operation
+    blockingArithmeticCreate(instance, keyNameBuffer, 60); // Expiration time of 60 seconds
+
+    // Perform the touch operation
+    blockingTouch(instance, 60, keyNameBuffer);
+
+    // Perform the increment of the key
+    blockingArithmeticIncrement(instance, keyNameBuffer);
+
+  } // loop for numTimesToRun
 
   printf("Almost done.  Calling lcb_destroy()\n");
   lcb_destroy(instance);
