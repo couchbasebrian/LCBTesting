@@ -1,5 +1,5 @@
 # LCBTesting
-Playing around with libcouchbase 2.4.6
+Doing some testing with libcouchbase 2.4.6
 
 libcouchbase 2.4.6 API reference:
 
