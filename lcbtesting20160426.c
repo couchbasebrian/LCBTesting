@@ -4,36 +4,6 @@
 #include <string.h>
 #include <time.h>
 
-// Brian Williams
-//
-// https://github.com/couchbasebrian/LCBTesting
-//
-// Created August 25, 2015
-// Modified April 26, 2016
-//
-// Tested on CentOS release 6.6 (Final) with the following:
-//
-// $ rpm -qa | grep couch
-// libcouchbase2-libevent-2.5.8-1.el6.x86_64
-// couchbase-server-3.0.3-1716.x86_64
-// libcouchbase2-core-2.5.8-1.el6.x86_64
-// libcouchbase2-bin-2.5.8-1.el6.x86_64
-// libcouchbase-devel-2.5.8-1.el6.x86_64
-//
-// gcc version 4.4.7 20120313 (Red Hat 4.4.7-11) (GCC) 
-//
-// Reference URLs:
-// http://docs.couchbase.com/sdk-api/couchbase-c-client-2.5.8/index.html
-//
-// How to use:
-// sudo yum install git
-// git clone https://github.com/couchbasebrian/LCBTesting.git
-// wget http://packages.couchbase.com/clients/c/couchbase-csdk-setup
-// sudo perl couchbase-csdk-setup
-// cd LCBTesting
-// ./compileAndRun.sh
-
-
 struct timespec vartime;
 
 // call this function to start a nanosecond-resolution timer
@@ -127,15 +97,13 @@ static void blockingArithmeticCreate(lcb_t instance, char *keyName, int expTimeS
   arithmeticCommand->v.v0.exptime = expTimeSeconds; 
   arithmeticCommand->v.v0.create  = 1;
   arithmeticCommand->v.v0.delta   = 1;
-  arithmeticCommand->v.v0.initial = 1234500;	// Docs start off with this value, but then get incremented
-
-  // In the UI after the program runs you see docs with content "1234501"
+  arithmeticCommand->v.v0.initial = 1234500;
 
   const lcb_arithmetic_cmd_t* arithCommands[] = { arithmeticCommand };
 
   arithmeticCreateErrorCode = lcb_arithmetic(instance, NULL, 1, arithCommands);
   if (arithmeticCreateErrorCode != LCB_SUCCESS) {
-    printf("Couldn't schedule arithmetic create operation!\n");
+    printf("Couldn't schedule arithmeetic create operation!\n");
     printf("lcb_arithmetic errorCode is 0x%.8X \n", arithmeticCreateErrorCode);
     exit(1);
   }
@@ -180,23 +148,7 @@ void blockingTouch(lcb_t instance, int expTimeSeconds, char *keyName) {
 // Main 
 int main(int argc, char* argv[])
 {
-  printf("Welcome %d.\n", argc);
-
-  if (argc == 1) {
-    printf("No arguments supplied.  Using default bucket.\n");
-  }
-  else if (argc == 2) {
-    printf("One argument supplied.  Using bucket named %s.\n", argv[1]);
-  }
-  else {
-    printf("I do not know what you want.\n");
-    exit(1);
-  }
-
-  char conStrArray[1000];
-  char* connectionString = &conStrArray;
-  sprintf(connectionString, "couchbase://localhost/%s", argv[1]);;
-  printf("The connection string is: %s\n", connectionString);
+  printf("Welcome.\n");
 
   // Do this once
   srand(time(NULL));
@@ -204,8 +156,7 @@ int main(int argc, char* argv[])
   // initializing
   struct lcb_create_st cropts = { 0 };
   cropts.version = 3;
-  // cropts.v.v3.connstr = "couchbase://localhost/default";
-  cropts.v.v3.connstr = connectionString; 
+  cropts.v.v3.connstr = "couchbase://localhost/default";
   lcb_error_t create_err;
   lcb_t instance;
   create_err = lcb_create(&instance, &cropts);
@@ -230,7 +181,7 @@ int main(int argc, char* argv[])
   lcb_set_touch_callback(instance, touch_callback); 
 
   // Main part of the program
-  int numTimesToRun = 25;   // specify how many times to iterate
+  int numTimesToRun = 10;   // specify how many times to iterate
   int useARandomKey = 1;    // specify whether to use a random or sequential key
 
   char keyNameBuffer[100];
@@ -255,13 +206,11 @@ int main(int argc, char* argv[])
     blockingArithmeticCreate(instance, keyNameBuffer, 60); // Expiration time of 60 seconds
 
     // Perform the touch operation
-    int docExpirationTime = 60;		// 60 seconds 
-    blockingTouch(instance, docExpirationTime, keyNameBuffer);
+    blockingTouch(instance, 60, keyNameBuffer);
 
     // Perform the increment of the key
     blockingArithmeticIncrement(instance, keyNameBuffer);
 
-    printf("\n");
   } // loop for numTimesToRun
 
   printf("Almost done.  Calling lcb_destroy()\n");
@@ -271,5 +220,3 @@ int main(int argc, char* argv[])
 
   return 0;
 }
-
-// EOF
