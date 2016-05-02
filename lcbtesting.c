@@ -10,6 +10,7 @@
 //
 // Created August 25, 2015
 // Modified April 26, 2016
+// Modified May 2, 2016 -- added error counter
 //
 // Tested on CentOS release 6.6 (Final) with the following:
 //
@@ -32,6 +33,33 @@
 // sudo perl couchbase-csdk-setup
 // cd LCBTesting
 // ./compileAndRun.sh
+
+int GLOBALERRORCOUNT = 0;
+int GLOBALERRORTHRESH = 10;
+
+void initGlobalErrorCount() {
+  GLOBALERRORCOUNT = 0;
+}
+
+void incrementGlobalErrorCount() {
+  GLOBALERRORCOUNT++;
+}
+
+void incrementMaybe(lcb_error_t anErr) {
+  if (LCB_SUCCESS != anErr) {
+    incrementGlobalErrorCount();
+    printf("ERROR: %s\n", lcb_strerror(NULL, anErr));
+  }
+
+  if (GLOBALERRORCOUNT > GLOBALERRORTHRESH) {
+    exit(1);
+  }
+
+}
+
+void displayGlobalErrorCount() {
+  printf("ERROR COUNT: %10d\n", GLOBALERRORCOUNT);
+}
 
 
 struct timespec vartime;
@@ -58,6 +86,7 @@ long timer_end(struct timespec start_time){
 static void storage_callback(lcb_t instance, const void *cookie, lcb_storage_t op, lcb_error_t err, const lcb_store_resp_t *resp)
 {
     printf("  Callback for storage.  Stored %.*s\n", (int)resp->v.v0.nkey, resp->v.v0.key);
+    incrementMaybe(err);
 }
 
 static void get_callback(lcb_t instance, const void *cookie, lcb_error_t err, const lcb_get_resp_t *resp)
@@ -66,17 +95,20 @@ static void get_callback(lcb_t instance, const void *cookie, lcb_error_t err, co
     printf("  Callback for get.  Time taken for get (nanoseconds): %ld\n", time_elapsed_nanos);
     printf("  Retrieved key %.*s\n", (int)resp->v.v0.nkey, resp->v.v0.key);
     printf("  Value is %.*s\n", (int)resp->v.v0.nbytes, resp->v.v0.bytes);
+    incrementMaybe(err);
 }
 
 static void touch_callback (lcb_t instance, const void *cookie, lcb_error_t error, const lcb_touch_resp_t *resp)
 {
     printf("  Callback for touch.  error is  0x%.8X \n", error);
+    incrementMaybe(error);
 }
 
 
 static void arithmetic_callback(lcb_t instance, const void *cookie, lcb_error_t error, const lcb_arithmetic_resp_t *resp)
 {
     printf("  Callback for arithmetic.  Error is 0x%.8X \n", error);
+    incrementMaybe(error);
 }
 
 
@@ -104,9 +136,9 @@ static void blockingArithmeticIncrement(lcb_t instance, char *keyName) {
     exit(1);
   }
 
-  printf("Arithmetic CREATE: About to do lcb_wait()...\n");
+  // printf("Arithmetic CREATE: About to do lcb_wait()...\n");
   lcb_wait(instance); 
-  printf("Back from lcb_wait()...\n");
+  // printf("Back from lcb_wait()...\n");
 
 } // end of blockingArithmeticIncrement()
 
@@ -194,7 +226,8 @@ int main(int argc, char* argv[])
   }
 
   char conStrArray[1000];
-  char* connectionString = &conStrArray;
+  // char* connectionString = &conStrArray;
+  char* connectionString = conStrArray;
   sprintf(connectionString, "couchbase://localhost/%s", argv[1]);;
   printf("The connection string is: %s\n", connectionString);
 
@@ -230,25 +263,35 @@ int main(int argc, char* argv[])
   lcb_set_touch_callback(instance, touch_callback); 
 
   // Main part of the program
-  int numTimesToRun = 25;   // specify how many times to iterate
+  int numTimesToRun = 50000;   // specify how many times to iterate
+
+  // 1 means TRUE
+  int useAStaticKey = 1;    // Whether to use exactly the same key or not
+
+  // If you elect NOT to use a static key...
   int useARandomKey = 1;    // specify whether to use a random or sequential key
 
   char keyNameBuffer[100];
 
   int i = 0;
 
+  // Default to a static non changing key
+  sprintf(keyNameBuffer, "staticKey");
+
   for (i = 0; i < numTimesToRun; i++) {
 
-    if (useARandomKey == 0) {
-	// Do NOT use a random key
+    if (useAStaticKey == 0) {
+      if (useARandomKey == 0) {
+  	// Do NOT use a random key
         sprintf(keyNameBuffer, "nonRandomKey%d", i);
-    }
-    else {
+      }
+      else {
 	// Use a random key, generate a new one for each iteration of the loop
         int randomNumber = rand();
         sprintf(keyNameBuffer, "randomKey%d", randomNumber);
+      }
     }
-
+    
     printf("#### Iteration: %5d Key: %10s\n", i, keyNameBuffer);
 
     // Perform the arithmetic operation
@@ -262,6 +305,8 @@ int main(int argc, char* argv[])
     blockingArithmeticIncrement(instance, keyNameBuffer);
 
     printf("\n");
+
+    displayGlobalErrorCount();
   } // loop for numTimesToRun
 
   printf("Almost done.  Calling lcb_destroy()\n");
